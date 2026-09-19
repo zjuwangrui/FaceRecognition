@@ -1,6 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 2012
+# Visual Studio Version 18
+VisualStudioVersion = 18.10.12210.168 stable
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BlinkEyeCheck", "PlugIns\BlinkEyeCheck\BlinkEyeCheck.vcxproj", "{621FDEB2-EF22-462E-83D6-6CA98F460679}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FaceLocator", "PlugIns\FaceLocator\FaceLocator.vcxproj", "{A8B87387-147D-482B-84F8-0680B7E1725C}"
@@ -16,6 +18,11 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ImageProc", "ImageProc\ImageProc.vcxproj", "{DCBFD645-660C-4C43-A571-50776845B76A}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TraceFeature", "TraceFeature\TraceFeature.vcxproj", "{DD091EF8-9CB8-4E21-89EF-6AF40B1AC6AF}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "解决方案项", "解决方案项", "{29AF4927-B1F1-4ABA-ADD9-407AB5A97C2E}"
+	ProjectSection(SolutionItems) = preProject
+		C:\Users\lenovo\WPSDrive\1639471701\WPS企业云盘\浙江大学\我的企业文档\使用中的学习资料\数字信号处理综合实验\数字信号处理综合实验讲义_202509.pdf = C:\Users\lenovo\WPSDrive\1639471701\WPS企业云盘\浙江大学\我的企业文档\使用中的学习资料\数字信号处理综合实验\数字信号处理综合实验讲义_202509.pdf
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -75,5 +82,8 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {9E006048-4BAA-41B1-B1C8-4257A1A7F2FB}
 	EndGlobalSection
 EndGlobal

@@ -433,7 +433,7 @@ void CVFWCAPTUREDlg::OnSelchangeList2()
 	m_PluginEnable.SetCheck(AllPlugIns[m_PluginList.GetCurSel()].bEnabled);	
 	// EnableWindow(): ʹĳ���ؼ��򴰿ڿ���
 	m_PluginEnable.EnableWindow(TRUE);
-	AddLogInfo("�����Ϣ:%s",AllPlugIns[m_PluginList.GetCurSel()].OnPlugInInfo());
+	AddLogInfo("PluginInfo:%s",AllPlugIns[m_PluginList.GetCurSel()].OnPlugInInfo());
 }
 void CVFWCAPTUREDlg::OnPluginEnable() 
 {	// TODO: Add your control notification handler code here
