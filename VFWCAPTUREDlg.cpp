@@ -252,33 +252,34 @@ void CVFWCAPTUREDlg::OnStart()
 		CAPTUREPARMS m_CaptureParams;
     //  ����"����" 
 		m_hCapture = capCreateCaptureWindow("cap",WS_EX_CONTROLPARENT|WS_CHILD|WS_VISIBLE,10,6,640,480,m_hWnd,0);
-	//	连接摄像头驱动（最多尝试3次，避免死循环）
+	//  connect driver, retry up to 3 times to avoid infinite loop
 		int nRetry = 0;
 		while(!capDriverConnect(m_hCapture, 0) && nRetry < 3) nRetry++;
-		if(nRetry >= 3) { AddLogInfo("摄像头连接失败!"); return; }
+		if(nRetry >= 3) { AddLogInfo("Camera connect failed!"); return; }
 
-    //设置视频设备参数
+    //  setup capture params
 		capCaptureGetSetup(m_hCapture,&m_CaptureParams,sizeof(m_CaptureParams));
 		m_CaptureParams.fYield = TRUE;
 		capCaptureSetSetup(m_hCapture,&m_CaptureParams,sizeof(m_CaptureParams));
 
-		// 尝试将摄像头格式切换为 YUY2（640x480）
+		// try to switch camera format to YUY2 640x480
 		{
-			BITMAPINFO bi = {};
+			BITMAPINFO bi;
+			memset(&bi, 0, sizeof(bi));
 			bi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
 			bi.bmiHeader.biWidth       = 640;
 			bi.bmiHeader.biHeight      = 480;
 			bi.bmiHeader.biPlanes      = 1;
 			bi.bmiHeader.biBitCount    = 16;
-			bi.bmiHeader.biCompression = YUV2; // YUY2 FourCC
+			bi.bmiHeader.biCompression = YUV2;
 			bi.bmiHeader.biSizeImage   = 640 * 480 * 2;
 			if(!capSetVideoFormat(m_hCapture, &bi, sizeof(bi)))
-				AddLogInfo("格式切换YUY2失败,请点VF Setup手动选择格式");
+				AddLogInfo("Switch to YUY2 failed, please use VF Setup button.");
 			else
-				AddLogInfo("已切换为YUY2 640x480格式");
+				AddLogInfo("Switched to YUY2 640x480.");
 		}
 
-   //   开启软件预览（代替不可用的硬件Overlay）
+   //  use software preview instead of hardware overlay (not supported on modern OS)
 		capPreview(m_hCapture, TRUE);
 		capPreviewRate(m_hCapture, 33);
    //   ������Ӧ��ťΪ�״̬
@@ -387,10 +388,7 @@ void CVFWCAPTUREDlg::AddLogInfo(LPCTSTR sMessage, ...)
 	char sBuffer[1024];
     //VA_START���ʼ��VA_LIST����, ( ap = (va_list)&v + _INTSIZEOF(v) ) ��ָ���һ����ε�λ��
 	va_start(ap, sMessage);
-    /*�͸�ʽ��������ַ�����,int vsprintf(char *string,char *format,va_list param);
-	vsprintf()�����е��Ա�����λ�������еģ�����Ԫ�ص��ַ���֮ǰ��Ҫ���ϰٷֺ�(%).
-	��������ǡ�һ��һ������˳��ִ�еġ��ڵ�һ���ٷֺţ�%���󣬽������һ������Ԫ�أ�
-	�ڵڶ���%�ź󽫲���ڶ�������Ԫ�أ��������ơ�*/
+    // vsprintf: format string with va_list arguments
 	vsprintf(sBuffer,sMessage,ap);
 	//���va_list����������εĻ�ȡ
 	va_end(ap);
@@ -571,42 +569,41 @@ void CVFWCAPTUREDlg::YUVtoRGB(
 
 //��YUV422ƽ��ͼƬ��ʽ(��Y-U-V���)ת��ΪRGB��Ƶ���ݸ�ʽ��������RGBRGB...��
 void CVFWCAPTUREDlg::RGBtoYUV(
-	    int w, int h,//ͼ���С
-		BYTE *pRGB, //YUV422��Ƶͼ��ָ��
-		BYTE *pY, BYTE *pU, BYTE *pV//YUV422ƽ��ͼƬָ��
-		)
+	int w, int h,//ͼ���С
+	BYTE* pRGB, //YUV422��Ƶͼ��ָ��
+	BYTE* pY, BYTE* pU, BYTE* pV//YUV422ƽ��ͼƬָ��
+)
 {
-	BYTE* pLine = pRGB+w*(h-1)*3;//ָ��RGBͼ��ĵ�һ�У����洢�ռ����һ��
+	BYTE* pLine = pRGB + w * (h - 1) * 3;//ָ��RGBͼ��ĵ�һ�У����洢�ռ����һ��
 	BYTE* pLineY = pY;
 	BYTE* pLineU = pU;
 	BYTE* pLineV = pV;
-    int r, g, b;
-    int y, u, v;
-	for(int j=0;j<h;j++)
+	int r, g, b;
+	int y, u, v;
+	for (int j = 0;j < h;j++)
 	{
 		//Y
-		for(int i=0;i<w;i++)//һ�д���
+		for (int i = 0;i < w;i++)//һ�д���
 		{
-		 b=(int)pLine[3*i] ;
-		 g=(int)pLine[3*i+1] ;
-         r=(int)pLine[3*i+2];
-	     y = (int) (0.299*r + 0.587*g+0.114*b);
-         if(y > 255) y = 255;
-         if(y < 0) y = 0;
-         pLineY[i] =(unsigned char) y;
-		 if(i%2==0)
-		 {
-           u = (int) (- 0.1687*r- 0.3313*g+0.5*b + 128);
-           v = (int) (0.5*r - 0.4187*g - 0.0813*b + 128);
-           pLineU[i/2] =(unsigned char) u;
-           pLineV[i/2] =(unsigned char) v;
-		 }
+			b = (int)pLine[3 * i];
+			g = (int)pLine[3 * i + 1];
+			r = (int)pLine[3 * i + 2];
+			y = (int)(0.299 * r + 0.587 * g + 0.114 * b);
+			if (y > 255) y = 255;
+			if (y < 0) y = 0;
+			pLineY[i] = (unsigned char)y;
+			if (i % 2 == 0)
+			{
+				u = (int)(-0.1687 * r - 0.3313 * g + 0.5 * b + 128);
+				v = (int)(0.5 * r - 0.4187 * g - 0.0813 * b + 128);
+				pLineU[i / 2] = (unsigned char)u;
+				pLineV[i / 2] = (unsigned char)v;
+			}
 		}
 
 		pLineY += w;//����һ��
-		pLineU += w/2;
-		pLineV += w/2;
-		pLine -= w*3;//����һ��
+		pLineU += w / 2;
+		pLineV += w / 2;
+		pLine -= w * 3;//����һ��
 	}
-
 }
