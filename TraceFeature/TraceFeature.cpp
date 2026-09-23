@@ -60,13 +60,13 @@ CTraceFeatureApp::CTraceFeatureApp()
 CTraceFeatureApp theApp;
 #define ByteToVectorDouble(a) ((int)(a))/255.0
 #define WordToVectorDouble(a) ((int)(a))/65535.0
-#define MAX_RH	256			//×î´óÌØÕ÷Æ¥ÅäËÑË÷·¶Î§µÄ¸ß¶È
-aBYTE* pBuffer;//256*4*8=8196×Ö½ÚµÄ»º³åÇø±¸ÓÃ
-//pLineSumCºÍpLineSumDÊÇÎªÁË¿ìËÙËÑË÷Ò»¸öÁÚÓò¶øÉèÖÃµÄ£¬¾ßÌåÇë¿´InitFromImageColsº¯ÊýµÄËµÃ÷
+#define MAX_RH	256			//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ¥ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î§ï¿½Ä¸ß¶ï¿½
+aBYTE* pBuffer;//256*4*8=8196ï¿½Ö½ÚµÄ»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+//pLineSumCï¿½ï¿½pLineSumDï¿½ï¿½Îªï¿½Ë¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÃµÄ£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ë¿´InitFromImageColsï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ëµï¿½ï¿½
 aPOINT* pLineSumC[2]={NULL,NULL};
 aPOINT* pLineSumD[2][2]={{NULL,NULL},{NULL,NULL}};
 /*******************************************************************/
-//³õÊ¼»¯È«¾ÖÖ¸Õë±äÁ¿ pLineSumC¡¢pLineSumD
+//ï¿½ï¿½Ê¼ï¿½ï¿½È«ï¿½ï¿½Ö¸ï¿½ï¿½ï¿½ï¿½ï¿½ pLineSumCï¿½ï¿½pLineSumD
 /*******************************************************************/
 DLL_EXP void InitFeatureBuffer(BUF_STRUCT* pBS)
 {
@@ -77,17 +77,17 @@ DLL_EXP void InitFeatureBuffer(BUF_STRUCT* pBS)
 	pLineSumD[0][1] = pLineSumD[0][0]+MAX_RH;
 	pLineSumD[1][0] = pLineSumD[0][1]+MAX_RH;
 	pLineSumD[1][1] = pLineSumD[1][0]+MAX_RH;
-	//ÒÔÉÏÕ¼¾ÝMAX_RH*6*8×Ö½Ú=12K bytes,Ê£Óà4K bytes
+	//ï¿½ï¿½ï¿½ï¿½Õ¼ï¿½ï¿½MAX_RH*6*8ï¿½Ö½ï¿½=12K bytes,Ê£ï¿½ï¿½4K bytes
 	pBuffer = (aBYTE*)(pLineSumD[1][1]+MAX_RH);
 }
 /*******************************************************************/
-//³õÊ¼»¯¸ú×ÙÌåµÄÌØÕ÷£¬²ÎÊýÎª¸ú×ÙÌå½á¹¹±äÁ¿
+//ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½á¹¹ï¿½ï¿½ï¿½ï¿½
 /*******************************************************************/
 DLL_EXP void InitFeatureVector( FeatureVector* pThis)
 {
 	int i;
 	ASSERT(pThis);
-    //ÌØÕ÷ÏòÁ¿ÒÔFeatureVector4PÐÎÊ½´æ·Å
+    //ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½FeatureVector4Pï¿½ï¿½Ê½ï¿½ï¿½ï¿½
 	FeatureVector4P* pVector = (FeatureVector4P*)pThis->Vector;
 	pVector->pNL_LeftTop		= (FeatureVector4P*)((aBYTE*)pVector+sizeof(FeatureVector4P));
 	pVector->pNL_RightTop		= (FeatureVector4P*)((aBYTE*)pVector+2*sizeof(FeatureVector4P));
@@ -101,12 +101,33 @@ DLL_EXP void InitFeatureVector( FeatureVector* pThis)
 	pVector->pNL_RightBottom->nLevels = 1;
     for(i=0;i<4;i++)
     	{
-        pVector->Vector[i].x = pVector->Vector[i].y = 0;//ËÄ½ÇÖØÐÄ
-        //×ÓÇøÓòµÄËÄ½ÇÖØÐÄ
+        pVector->Vector[i].x = pVector->Vector[i].y = 0;//ï¿½Ä½ï¿½ï¿½ï¿½ï¿½ï¿½
+        //ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä½ï¿½ï¿½ï¿½ï¿½ï¿½
         pVector->pNL_LeftTop->Vector[i].x = pVector->pNL_LeftTop->Vector[i].y = 0;
         pVector->pNL_RightTop->Vector[i].x = pVector->pNL_RightTop->Vector[i].y = 0;
         pVector->pNL_LeftBottom->Vector[i].x = pVector->pNL_LeftBottom->Vector[i].y = 0;
         pVector->pNL_RightBottom->Vector[i].x = pVector->pNL_RightBottom->Vector[i].y = 0;
     	}
+}
+
+// Stub: update feature vector by blending with another (to be implemented in Plugin 3)
+DLL_EXP bool UpdateVectorsFrom(FeatureVector* pFV, FeatureVector* aFV, int nOrgWeight)
+{
+	return false;
+}
+
+// Stub: search image patch matching pFV within rcRange; returns best-match position (to be implemented in Plugin 3)
+DLL_EXP aPOINT CompareFromImage(FeatureVector* pFV, aBYTE* pImageBits, int nLineW, int nH,
+                                aRect rcSampleRC, aRect rcRange, int* nMinDist, FeatureVector* theMinFV)
+{
+	aPOINT pt = {0, 0};
+	if (nMinDist) *nMinDist = 0x7fffffff;
+	return pt;
+}
+
+// Stub: compute distance between two feature vectors (to be implemented in Plugin 3)
+DLL_EXP int FV_Distance(FeatureVector* pFV, FeatureVector* aFV, int nFaceClrWeight, int nLevelWeight)
+{
+	return 0x7fffffff;
 }
 
