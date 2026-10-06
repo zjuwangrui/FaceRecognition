@@ -1,0 +1,33 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "win32",
+      "displayName": "MSVC v145 Win32",
+      "description": "Configure the Win32 MFC build without opening Visual Studio.",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "Win32",
+      "toolset": "v145",
+      "binaryDir": "${sourceDir}/build"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "displayName": "Build Debug",
+      "configurePreset": "win32",
+      "configuration": "Debug"
+    },
+    {
+      "name": "release",
+      "displayName": "Build Release",
+      "configurePreset": "win32",
+      "configuration": "Release"
+    }
+  ]
+}

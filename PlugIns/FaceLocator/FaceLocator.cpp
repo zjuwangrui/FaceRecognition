@@ -5,11 +5,12 @@
 //   Output: pBS->rcnFace, pBS->nFacePixelNum, face rectangle drawn on pYBits
 //
 //   Steps:
-//     1. Skin color modeling  -> binary tempImage (1/4W x 1/4H)
-//     2. Morphological: 3x3 opening, 7x7 closing
-//     3. Connected component labeling (4-connectivity)
-//     4. Keep largest region (= face), compute bounding rect
-//     5. Store results, draw display box, free tempImage
+//     1. Equalize the Y plane to compensate for illumination
+//     2. Skin color modeling  -> binary tempImage (1/4W x 1/4H)
+//     3. Morphological: 3x3 opening, 3x3 closing
+//     4. Connected component labeling (4-connectivity)
+//     5. Keep largest region (= face), compute bounding rect
+//     6. Store results, draw display box, free tempImage
 
 #include "stdafx.h"
 #include "FaceLocator.h"
@@ -69,6 +70,52 @@ DLL_EXP int ON_PLUGINCTRL(int nMode, void* pParameter)
  *  Face detection and localization
  *****************************************************************************/
 
+static void EqualizeLuminance(aBYTE* image, int width, int height)
+{
+	int histogram[256];
+	aBYTE lookup[256];
+	int pixelCount = width * height;
+	int cumulative = 0;
+	int firstCumulative = 0;
+	int i;
+
+	if (!image || width <= 0 || height <= 0 || pixelCount <= 0)
+		return;
+
+	memset(histogram, 0, sizeof(histogram));
+	for (i = 0; i < pixelCount; i++)
+		histogram[image[i]]++;
+
+	for (i = 0; i < 256; i++)
+	{
+		cumulative += histogram[i];
+		if (cumulative > 0)
+		{
+			firstCumulative = cumulative;
+			break;
+		}
+	}
+
+	// A constant image has no contrast to equalize.
+	if (firstCumulative == pixelCount)
+		return;
+
+	cumulative = 0;
+	for (i = 0; i < 256; i++)
+	{
+		int value;
+		cumulative += histogram[i];
+		value = (cumulative <= firstCumulative)
+			? 0
+			: (cumulative - firstCumulative) * 255 /
+			  (pixelCount - firstCumulative);
+		lookup[i] = (aBYTE)value;
+	}
+
+	for (i = 0; i < pixelCount; i++)
+		image[i] = lookup[image[i]];
+}
+
 // Erode a binary image with an N x N structuring element using 2D minimum filter
 static void Erode(aBYTE* img, int w, int h, int N)
 {
@@ -91,6 +138,13 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 
 	BUF_STRUCT* pBS = (BUF_STRUCT*)pBuffer;
 
+	// ---- Step 1: Illumination compensation ---------------------------------
+	// Equalize only the Y plane. U/V remain unchanged because the skin model
+	// below uses fixed chrominance ranges.
+	int yWidth = w / 2;
+	int yHeight = h / 4;
+	EqualizeLuminance(pBS->clrBmp_1d8, yWidth, yHeight);
+
 	// Dimensions of the working binary image (same as U/V plane of clrBmp_1d8)
 	int tw = w / 4;  // tempImage width  = 1/4 W
 	int th = h / 4;  // tempImage height = 1/4 H
@@ -103,7 +157,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 		return;
 	}
 
-	// ---- Step 1: Skin color modeling ----------------------------------------
+	// ---- Step 2: Skin color modeling ----------------------------------------
 	// clrBmp_1d8 layout (YUV422 planar at 1/2W x 1/4H):
 	//   Y : (w/2)*(h/4) bytes starting at clrBmp_1d8
 	//   U : (w/4)*(h/4) bytes starting at clrBmp_1d8 + (w/2)*(h/4)
@@ -131,22 +185,23 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	}
 	ShowDebugMessage("FaceLocator: skin pixels=%d / %d", skinCount, tw * th);
 
-	// ---- Step 2: Morphological processing -----------------------------------
+	// ---- Step 3: Morphological processing -----------------------------------
 	// 3x3 opening (erode then dilate): removes isolated noise points
 	Erode(tempImage, tw, th, 3);
 	Dilate(tempImage, tw, th, 3);
-	// 7x7 closing (dilate then erode): fills holes inside face region
+	// Use a small 3x3 closing so nearby background regions are not bridged
+	// into the face candidate at this already-downsampled resolution.
 	Dilate(tempImage, tw, th, 7);
 	Erode(tempImage, tw, th, 7);
 	ShowDebugMessage("FaceLocator: morphology done");
 
-	// ---- Step 3: Connected component labeling (4-connectivity) -------------
+	// ---- Step 4: Connected component labeling (4-connectivity) -------------
 	// RegionMark labels each connected region 1..N in tempImage and returns N.
 	// Pixel values become region labels (byte, so max 255 regions).
 	int nMaxMark = RegionMark(tempImage, tw, th);
 	ShowDebugMessage("FaceLocator: RegionMark -> %d regions", nMaxMark);
 
-	// ---- Step 4: Find and keep largest region (= face) ----------------------
+	// ---- Step 5: Find and keep largest region (= face) ----------------------
 	if (nMaxMark <= 0)
 	{
 		// No skin region detected at all
@@ -183,7 +238,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	for (int k = 0; k < tw * th; k++)
 		tempImage[k] = (tempImage[k] == (aBYTE)faceLabel) ? 255 : 0;
 
-	// ---- Step 5: Compute face bounding rectangle ----------------------------
+	// ---- Step 6: Compute face bounding rectangle ----------------------------
 	aRect rcInTemp;
 	memset(&rcInTemp, 0, sizeof(aRect));
 	int nPixelCount = 0;
@@ -202,7 +257,8 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	// A face is roughly as wide as it is tall (W:H ~ 1:1.5 at most).
 	// If the skin region is much taller than wide it is grabbing the neck;
 	// trim from the bottom to remove the neck portion.
-
+	ShowDebugMessage("FaceLocator: rcInTemp before trim=(%d,%d,%d,%d)",
+		rcInTemp.left, rcInTemp.top, rcInTemp.width, rcInTemp.height);
 	{
 		int maxH = rcInTemp.width * 6 / 5;
 		if (maxH < 1) maxH = 1;
@@ -212,7 +268,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	ShowDebugMessage("FaceLocator: rcInTemp after trim=(%d,%d,%d,%d)",
 		rcInTemp.left, rcInTemp.top, rcInTemp.width, rcInTemp.height);
 
-	// ---- Step 6: Store results in pBS ---------------------------------------
+	// ---- Step 7: Store results in pBS ---------------------------------------
 	// tempImage is tw x th (1/4W x 1/4H).
 	// clrBmp_1d8 Y channel is (w/2) x (h/4) = 2*tw x th.
 	// Horizontal coordinates must be scaled x2; vertical stays the same.
@@ -227,13 +283,13 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 		pBS->rcnFace.width, pBS->rcnFace.height,
 		pBS->nFacePixelNum);
 
-	// ---- Step 7: Write face mask into Y channel of clrBmp_1d8 --------------
+	// ---- Step 8: Write face mask into Y channel of clrBmp_1d8 --------------
 	// Upscale tempImage (tw x th) horizontally x2 into clrBmp_1d8 Y channel (2*tw x th).
 	// This overwrites the Y channel, which is intentional and allowed.
 	// U and V channels are untouched.
 	ReSample(tempImage, tw, th, w / 2, h / 4, false, true, pBS->clrBmp_1d8);
 
-	// ---- Step 8: Draw face bounding box on full-resolution display ----------
+	// ---- Step 9: Draw face bounding box on full-resolution display ----------
 	// rcnFace is in clrBmp_1d8 space (w/2 x h/4).
 	// pYBits is (w x h): horizontal x2, vertical x4.
 	aRect rcDisplay;

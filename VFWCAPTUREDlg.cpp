@@ -5,8 +5,10 @@
 #include "vfw.h"
 #include "BufStruct.h"
 #include "ImageProc.h"
+#ifndef FACE_RECOGNITION_CMAKE_BUILD
 #pragma comment(lib,"vfw32.lib")
 #pragma comment(lib,"ImageProc.lib")
+#endif
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #undef THIS_FILE

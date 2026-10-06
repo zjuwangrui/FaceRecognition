@@ -16,6 +16,9 @@
 # Mono auto generated files
 mono_crash.*
 
+# CMake out-of-source build tree
+/build/
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
