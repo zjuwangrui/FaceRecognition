@@ -5,6 +5,8 @@
 #include "vfw.h"
 #include "BufStruct.h"
 #include "ImageProc.h"
+#include <algorithm>
+#include <vector>
 #ifndef FACE_RECOGNITION_CMAKE_BUILD
 #pragma comment(lib,"vfw32.lib")
 #pragma comment(lib,"ImageProc.lib")
@@ -165,36 +167,40 @@ BOOL CVFWCAPTUREDlg::OnInitDialog()
 	strncpy(sDir,path,256);//�ַ�������
 	//strncpy(path,sWorkDir,256);
 	strncat(path,"PlugIn\\*.dll",256);//�ַ�������
-	hFind = FindFirstFile(path,&w32fd);//����ָ���ļ�
+	std::vector<CString> pluginNames;
+	hFind = FindFirstFile(path,&w32fd);// enumerate plugin files
 	if( hFind!=INVALID_HANDLE_VALUE && hFind!=0 )
 	{
-		do 
+		do
 		{
-			if( nPlugInNum<32 )
-			{
-				AddLogInfo("One plugin found!-->%s<--",w32fd.cFileName);
-				//
-				strncpy(path,sDir,256);
-				strncat(path,"Plugin\\",256);
-				strncat(path,w32fd.cFileName,256);
-				//��ȡ����ĺ���ָ��
-				AllPlugIns[nPlugInNum].OpenPlugIn(path);
-				if( AllPlugIns[nPlugInNum].bPlugInOk )
-				{
-					strncpy(sExt," ",256);
-					strncat(sExt,w32fd.cFileName,256);
-					m_PluginList.AddString(sExt);//
-	     			AddLogInfo("Load PlugIn<%s> success!",path);
-  					AllPlugIns[nPlugInNum].OnInitPlugIn(NULL);
-                    nPlugInNum++;
-				}
-				else
-				{
-					AddLogInfo("Load PlugIn<%s> failed.",path);
-				}
-			}
+			if ((w32fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0)
+				pluginNames.push_back(w32fd.cFileName);
 		} while(FindNextFile(hFind,&w32fd));
 		FindClose(hFind);
+	}
+	std::sort(pluginNames.begin(), pluginNames.end());
+	for (size_t pluginIndex = 0; pluginIndex < pluginNames.size() && nPlugInNum < 32; pluginIndex++)
+	{
+		CString fileName = pluginNames[pluginIndex];
+		AddLogInfo("One plugin found!-->%s<--",(LPCTSTR)fileName);
+		strncpy(path,sDir,255);
+		path[255] = 0;
+		strncat(path,"Plugin\\",255-strlen(path));
+		strncat(path,(LPCTSTR)fileName,255-strlen(path));
+		AllPlugIns[nPlugInNum].OpenPlugIn(path);
+		if( AllPlugIns[nPlugInNum].bPlugInOk )
+		{
+			CString line;
+			line.Format(" %s",(LPCTSTR)fileName);
+			m_PluginList.AddString(line);
+			AddLogInfo("Load PlugIn<%s> success!",path);
+			AllPlugIns[nPlugInNum].OnInitPlugIn(NULL);
+			nPlugInNum++;
+		}
+		else
+		{
+			AddLogInfo("Load PlugIn<%s> failed.",path);
+		}
 	}
 	return TRUE;  // return TRUE  unless you set the focus to a control
 }
@@ -461,9 +467,15 @@ void CVFWCAPTUREDlg::OnActiveall()
 	}
 }
 //
-BOOL CVFWCAPTUREDlg::DestroyWindow() 
+BOOL CVFWCAPTUREDlg::DestroyWindow()
 {	// TODO: Add your specialized code here and/or call the base class
-	capDriverDisconnect(m_hCapture);
+	for (int i = 0; i < nPlugInNum; i++)
+	{
+		if (AllPlugIns[i].bPlugInOk && AllPlugIns[i].OnPlugInExit)
+			AllPlugIns[i].OnPlugInExit();
+	}
+	if (m_hCapture)
+		capDriverDisconnect(m_hCapture);
 	return CDialog::DestroyWindow();
 }
 //��YUV422��Ƶ���ݸ�ʽ��������YUYVYUYV...��ת��ΪYUV422ƽ��ͼƬ��ʽ(��Y-U-V���)

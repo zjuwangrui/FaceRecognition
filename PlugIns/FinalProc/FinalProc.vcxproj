@@ -105,6 +105,8 @@
       <SubSystem>Windows</SubSystem>
       <OutputFile>../../Debug/Plugin/PZ_FinalProc.dll</OutputFile>
       <ImportLibrary>.\Debug\PZ_FinalProc.lib</ImportLibrary>
+      <AdditionalLibraryDirectories>../../;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>ImageProc.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ModuleDefinitionFile>.\FinalProc.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
@@ -117,6 +119,7 @@
       <Optimization>MaxSpeed</Optimization>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <WarningLevel>Level3</WarningLevel>
+      <AdditionalIncludeDirectories>../../;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AssemblerListingLocation>.\Release\</AssemblerListingLocation>
       <PrecompiledHeaderOutputFile>.\Release\FinalProc.pch</PrecompiledHeaderOutputFile>
@@ -144,8 +147,10 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <LinkDLL>true</LinkDLL>
       <SubSystem>Windows</SubSystem>
-      <OutputFile>.\Release\FinalProc.dll</OutputFile>
+      <OutputFile>../../Release/Plugin/PZ_FinalProc.dll</OutputFile>
       <ImportLibrary>.\Release\FinalProc.lib</ImportLibrary>
+      <AdditionalLibraryDirectories>../../;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>ImageProc.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ModuleDefinitionFile>.\FinalProc.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
@@ -166,6 +171,7 @@
     <ResourceCompile Include="FinalProc.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="../../FatigueState.h" />
     <ClInclude Include="FinalProc.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="StdAfx.h" />

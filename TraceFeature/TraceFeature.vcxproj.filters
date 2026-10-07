@@ -37,6 +37,9 @@
     <ClInclude Include="TraceFeature.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="TraceFeatureApi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.txt" />

@@ -71,14 +71,15 @@ add_library(TraceFeature SHARED
     TraceFeature/StdAfx.cpp
     TraceFeature/TraceFeature.cpp
     TraceFeature/TraceFeature.h
+    TraceFeature/TraceFeatureApi.h
     TraceFeature/Resource.h
     TraceFeature/TraceFeature.rc
 )
-target_include_directories(TraceFeature PRIVATE
+target_include_directories(TraceFeature PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/TraceFeature"
 )
-target_compile_definitions(TraceFeature PRIVATE _USRDLL)
+target_compile_definitions(TraceFeature PRIVATE _USRDLL TRACEFEATURE_EXPORTS)
 target_link_libraries(TraceFeature PRIVATE ImageProc)
 configure_legacy_mfc_target(TraceFeature)
 
@@ -120,6 +121,7 @@ add_face_plugin(
     "${CMAKE_CURRENT_SOURCE_DIR}/PlugIns/FinalProc"
     FinalProc
 )
+target_link_libraries(FinalProc PRIVATE ImageProc)
 
 add_executable(VFWCAPTURE WIN32
     StdAfx.cpp

@@ -4,6 +4,7 @@
 #include "ImagePrepare.h"
 #include "BufStruct.h"
 #include "ImageProc.h"
+#include "FatigueState.h"
 #include "math.h"
 
 #ifdef _DEBUG
@@ -106,6 +107,12 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	// ---- First frame only: initialize memory layout and all state ----
 	if (pBS->bNotInited)
 	{
+		// The fixed frame layout must fit inside the host's w*h*4 allocation.
+		// Reject unsupported small formats before publishing any pointers.
+		size_t pixels = (size_t)w * (size_t)h;
+		if (sizeof(BUF_STRUCT) + sizeof(OTHER_VARS) + pixels * 47 / 16 > pixels * 4)
+			return;
+
 		// 1. Set image size
 		pBS->W = w;
 		pBS->H = h;
@@ -128,10 +135,17 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 		pBS->allocTimes       = 0;
 		pBS->cur_maxallocsize = 0;
 		pBS->bLastEyeChecked  = false;  // tracking model not yet established
-		pBS->EyeBallConfirm   = true;
-		pBS->EyePosConfirm    = true;
+		pBS->EyeBallConfirm   = false;
+		pBS->EyePosConfirm    = false;
 		pBS->nImageQueueIndex = -1;     // -1 means first frame not yet stored
 		pBS->nLastImageIndex  = -1;
+		pBS->ptTheLeftEye.x = pBS->ptTheLeftEye.y = -1;
+		pBS->ptTheRightEye.x = pBS->ptTheRightEye.y = -1;
+		pBS->ptTheNose.x = pBS->ptTheNose.y = -1;
+		memset(&pBS->rcnFace, 0, sizeof(aRect));
+		pBS->nFacePixelNum = 0;
+		memset(pBS->pOtherVars->ClrLocBuf, 0, sizeof(pBS->pOtherVars->ClrLocBuf));
+		ResetFatigueState(GetFatigueState(pBS));
 
 		// 4. Skin color histogram maps (manual formula 5.6 / 5.7)
 		//    byHistMap_U[i]=1 if 85<=i<=126, byHistMap_V[i]=1 if 130<=i<=165
@@ -164,6 +178,9 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	}
 
 	// ---- Every frame ----
+	// nFVTop is unused by the original ABI and is reused as a per-frame
+	// marker: TraceObject sets it after it processes the current image.
+	pBS->nFVTop = 0;
 
 	// Point display image at raw Y channel (other plugins may overwrite this later)
 	pBS->displayImage = pYBits;

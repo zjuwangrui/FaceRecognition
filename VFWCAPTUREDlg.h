@@ -6,8 +6,8 @@
 #endif // _MSC_VER > 1000
 /////////////////////////////////////////////////////////////////////////////
 // class ThePlugIns
-//¶¨Òåº¯ÊýÖ¸Õë¡£¸ñÊ½£º·µ»ØÀàÐÍ(*º¯ÊýÃû)(²ÎÊý±í)£»
-typedef void (WINAPIV *ON_INITPLUGIN)(LPVOID);//WINAPIV£ºµ÷ÓÃCº¯Êý·½·¨
+//ï¿½ï¿½ï¿½åº¯ï¿½ï¿½Ö¸ï¿½ë¡£ï¿½ï¿½Ê½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½(*ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½)(ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½)ï¿½ï¿½
+typedef void (WINAPIV *ON_INITPLUGIN)(LPVOID);//WINAPIVï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 typedef void (WINAPIV *ON_PLUGINRUN)(int,int,BYTE*,BYTE*,BYTE*,BYTE*);
 typedef void (WINAPIV *ON_PLUGINEXIT)(void);
 typedef void (WINAPIV *ON_PLUGIN_BELAST)(bool);
@@ -20,7 +20,7 @@ public:
 	BOOL Enabled(){
 		return bPlugInOk && bEnabled;
 	}
-    BOOL				bPlugInOk;//³É¹¦»ñÈ¡²å¼þµÄº¯ÊýÖ¸Õë±ê¼Ç
+    BOOL				bPlugInOk;//ï¿½É¹ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½Äºï¿½ï¿½ï¿½Ö¸ï¿½ï¿½ï¿½ï¿½
 	//
 	ON_PLUGINRUN		OnPlugInRun;
 	ON_INITPLUGIN		OnInitPlugIn;
@@ -29,8 +29,8 @@ public:
 	ON_PLUGINCTRL		OnPlugInCtrl;
 	ON_PLUGININFO		OnPlugInInfo;
 	BOOL				bEnabled;
-	char				sName[256];//´æ·Å²å¼þÎÄ¼þÃû
-	//ÎÞ²Î¹¹Ôìº¯Êý£¬³õÊ¼»¯
+	char				sName[256];//ï¿½ï¿½Å²ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½
+	//ï¿½Þ²Î¹ï¿½ï¿½ìº¯ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼ï¿½ï¿½
 	ThePlugIns()
 	{
 		OnPlugInRun			= NULL;
@@ -39,25 +39,26 @@ public:
 		OnPlugInCtrl		= NULL;
 		OnPlugInInfo		= NULL;
 		OnPlugInBeLast		= NULL;
+		hInst				= NULL;
 		bPlugInOk			= FALSE;
 		bEnabled			= FALSE;
 	};
-	//Îö¹¹º¯Êý
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	~ThePlugIns()
 	{
-        //ÊÍ·Å¶¯Ì¬Á¬½Ó¿â
+        //ï¿½Í·Å¶ï¿½Ì¬ï¿½ï¿½ï¿½Ó¿ï¿½
 		if( hInst )
 			FreeLibrary(hInst);
             hInst = NULL;
 	}
-	//»ñÈ¡²å¼þµÄº¯ÊýÖ¸Õë
+	//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½Äºï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
 	BOOL OpenPlugIn(LPCTSTR sPlugInPath)
 	{
-		//¼ÓÔØ¶¯Ì¬Á¬½Ó¿â
+		//ï¿½ï¿½ï¿½Ø¶ï¿½Ì¬ï¿½ï¿½ï¿½Ó¿ï¿½
 		hInst = LoadLibrary(sPlugInPath);
 		if( hInst!=NULL)//
 		{
-             //»ñÈ¡¶¯Ì¬Á¬½Ó¿âÀïµÄº¯ÊýµØÖ·¡£
+             //ï¿½ï¿½È¡ï¿½ï¿½Ì¬ï¿½ï¿½ï¿½Ó¿ï¿½ï¿½ï¿½Äºï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½
 			OnPlugInRun			= (ON_PLUGINRUN)GetProcAddress(hInst,"ON_PLUGINRUN");
 			OnInitPlugIn		= (ON_INITPLUGIN)GetProcAddress(hInst,"ON_INITPLUGIN");
 			OnPlugInExit		= (ON_PLUGINEXIT)GetProcAddress(hInst,"ON_PLUGINEXIT");
@@ -67,14 +68,14 @@ public:
 			if( OnPlugInRun && OnInitPlugIn && OnPlugInExit && OnPlugInBeLast )
 			{
 				char drv[256],dir[256],fname[256],ext[256];
-				//·Ö½âÂ·¾¶,void _splitpath( const char *path, char *drive,
+				//ï¿½Ö½ï¿½Â·ï¿½ï¿½,void _splitpath( const char *path, char *drive,
 				// char *dir, char *fname, char *ext );
 				_splitpath(sPlugInPath,drv,dir,fname,ext);
 				//   char*strncpy(char*dest,char*src,size_tn);
-				//°ÑsrcËùÖ¸ÏòµÄ×Ö·û´®ÖÐÒÔsrcµØÖ·¿ªÊ¼µÄÇ°n¸ö×Ö½Ú¸´ÖÆµ½destËùÖ¸µÄÊý×éÖÐ£¬²¢·µ»Ødest
+				//ï¿½ï¿½srcï¿½ï¿½Ö¸ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½srcï¿½ï¿½Ö·ï¿½ï¿½Ê¼ï¿½ï¿½Ç°nï¿½ï¿½ï¿½Ö½Ú¸ï¿½ï¿½Æµï¿½destï¿½ï¿½Ö¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½dest
 				strncpy(sName,fname,256);
 				// char *strncat(char *dest,char *src,int n);
-				//°ÑsrcËùÖ¸×Ö·û´®µÄÇ°n¸ö×Ö·ûÌí¼Ó
+				//ï¿½ï¿½srcï¿½ï¿½Ö¸ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½Ç°nï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½
 				strncat(sName,ext,256);
 				bPlugInOk = TRUE;
 			}

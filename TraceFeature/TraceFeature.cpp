@@ -2,8 +2,9 @@
 //
 #include "stdafx.h"
 #include "TraceFeature.h"
-#include "bufstruct.h"
+#include "TraceFeatureApi.h"
 #include "ImageProc.h"
+#include <limits.h>
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -83,51 +84,196 @@ DLL_EXP void InitFeatureBuffer(BUF_STRUCT* pBS)
 /*******************************************************************/
 //��ʼ�������������������Ϊ������ṹ����
 /*******************************************************************/
-DLL_EXP void InitFeatureVector( FeatureVector* pThis)
+// Feature-vector extraction, comparison and update helpers
+/*******************************************************************/
+typedef char FeatureVectorStorageMustFit[
+	(sizeof(FeatureVector4P) * 5 <= MAX_FEA_SIZE) ? 1 : -1];
+
+static FeatureVector4P* Root(FeatureVector* pThis)
 {
-	int i;
-	ASSERT(pThis);
-    //����������FeatureVector4P��ʽ���
-	FeatureVector4P* pVector = (FeatureVector4P*)pThis->Vector;
-	pVector->pNL_LeftTop		= (FeatureVector4P*)((aBYTE*)pVector+sizeof(FeatureVector4P));
-	pVector->pNL_RightTop		= (FeatureVector4P*)((aBYTE*)pVector+2*sizeof(FeatureVector4P));
-	pVector->pNL_LeftBottom		= (FeatureVector4P*)((aBYTE*)pVector+3*sizeof(FeatureVector4P));
-	pVector->pNL_RightBottom	= (FeatureVector4P*)((aBYTE*)pVector+4*sizeof(FeatureVector4P));
-	pThis->size = sizeof(FeatureVector4P)*5;//
-	pVector->nLevels = 2;
-	pVector->pNL_LeftTop->nLevels = 1;
-	pVector->pNL_RightTop->nLevels = 1;
-	pVector->pNL_LeftBottom->nLevels = 1;
-	pVector->pNL_RightBottom->nLevels = 1;
-    for(i=0;i<4;i++)
-    	{
-        pVector->Vector[i].x = pVector->Vector[i].y = 0;//�Ľ�����
-        //��������Ľ�����
-        pVector->pNL_LeftTop->Vector[i].x = pVector->pNL_LeftTop->Vector[i].y = 0;
-        pVector->pNL_RightTop->Vector[i].x = pVector->pNL_RightTop->Vector[i].y = 0;
-        pVector->pNL_LeftBottom->Vector[i].x = pVector->pNL_LeftBottom->Vector[i].y = 0;
-        pVector->pNL_RightBottom->Vector[i].x = pVector->pNL_RightBottom->Vector[i].y = 0;
-    	}
+	return pThis ? (FeatureVector4P*)pThis->Vector : NULL;
 }
 
-// Stub: update feature vector by blending with another (to be implemented in Plugin 3)
+static const FeatureVector4P* Root(const FeatureVector* pThis)
+{
+	return pThis ? (const FeatureVector4P*)pThis->Vector : NULL;
+}
+
+static void BindFeatureVector(FeatureVector* pThis)
+{
+	if (!pThis) return;
+	FeatureVector4P* root = Root(pThis);
+	FeatureVector4P* nodes = (FeatureVector4P*)pThis->Vector;
+	root->pNL_LeftTop = nodes + 1;
+	root->pNL_RightTop = nodes + 2;
+	root->pNL_LeftBottom = nodes + 3;
+	root->pNL_RightBottom = nodes + 4;
+}
+
+static void CopyFeatureData(FeatureVector* destination, const FeatureVector* source)
+{
+	if (!destination || !source) return;
+	FeatureVector4P* dst = Root(destination);
+	const FeatureVector4P* src = Root(source);
+	for (int i = 0; i < 5; i++)
+	{
+		dst[i].nLevels = src[i].nLevels;
+		for (int j = 0; j < 4; j++) dst[i].Vector[j] = src[i].Vector[j];
+		dst[i].faceColor_WeightCenter = src[i].faceColor_WeightCenter;
+	}
+	destination->size = source->size;
+	BindFeatureVector(destination);
+}
+
+static int ClampCoordinate(long long value)
+{
+	if (value < -1024) return -1024;
+	if (value > 1024) return 1024;
+	return (int)value;
+}
+
+static bool ValidRect(const aRect& rc, int w, int h)
+{
+	return rc.width > 0 && rc.height > 0 && rc.left >= 0 && rc.top >= 0 &&
+		rc.left + rc.width <= w && rc.top + rc.height <= h;
+}
+
+static void ExtractQuadrants(const aBYTE* image, int lineWidth, const aRect& rc,
+	FeatureVector4P* feature)
+{
+	for (int quadrant = 0; quadrant < 4; quadrant++)
+	{
+		int left = rc.left + (quadrant & 1) * rc.width / 2;
+		int top = rc.top + (quadrant >> 1) * rc.height / 2;
+		int right = rc.left + ((quadrant & 1) + 1) * rc.width / 2;
+		int bottom = rc.top + ((quadrant >> 1) + 1) * rc.height / 2;
+		long long sum = 0, xSum = 0, ySum = 0;
+		for (int y = top; y < bottom; y++)
+			for (int x = left; x < right; x++)
+			{
+				int value = image[y * lineWidth + x];
+				sum += value;
+				xSum += (long long)value * (x - rc.left);
+				ySum += (long long)value * (y - rc.top);
+			}
+		int cx = (left + right) / 2 - rc.left;
+		int cy = (top + bottom) / 2 - rc.top;
+		if (sum > 0)
+		{
+			cx = (int)(xSum / sum);
+			cy = (int)(ySum / sum);
+		}
+		feature->Vector[quadrant].x = ClampCoordinate((long long)cx * 2048 / rc.width - 1024);
+		feature->Vector[quadrant].y = ClampCoordinate((long long)cy * 2048 / rc.height - 1024);
+	}
+}
+
+DLL_EXP void InitFeatureVector(FeatureVector* pThis)
+{
+	if (!pThis) return;
+	memset(pThis, 0, sizeof(*pThis));
+	pThis->size = sizeof(FeatureVector4P) * 5;
+	FeatureVector4P* nodes = (FeatureVector4P*)pThis->Vector;
+	nodes[0].nLevels = 2;
+	for (int i = 1; i < 5; i++) nodes[i].nLevels = 1;
+	BindFeatureVector(pThis);
+}
+
+DLL_EXP bool CopyFeatureVector(FeatureVector* pDest, const FeatureVector* pSource)
+{
+	if (!pDest || !pSource) return false;
+	CopyFeatureData(pDest, pSource);
+	return true;
+}
+
+DLL_EXP bool ExtractFeatureFromImage(FeatureVector* pFV, const aBYTE* pImageBits,
+	int nLineW, int nH, aRect rcSample)
+{
+	if (!pFV || !pImageBits || nLineW <= 0 || nH <= 0 ||
+		rcSample.width < 4 || rcSample.height < 4 || !ValidRect(rcSample, nLineW, nH))
+		return false;
+	InitFeatureVector(pFV);
+	FeatureVector4P* root = Root(pFV);
+	ExtractQuadrants(pImageBits, nLineW, rcSample, root);
+	for (int i = 0; i < 4; i++)
+	{
+		aRect child = rcSample;
+		child.left += (i & 1) * rcSample.width / 2;
+		child.top += (i >> 1) * rcSample.height / 2;
+		child.width = rcSample.width / 2;
+		child.height = rcSample.height / 2;
+		ExtractQuadrants(pImageBits, nLineW, child, root + i + 1);
+	}
+	return true;
+}
+
 DLL_EXP bool UpdateVectorsFrom(FeatureVector* pFV, FeatureVector* aFV, int nOrgWeight)
 {
-	return false;
+	if (!pFV || !aFV) return false;
+	int weight = nOrgWeight < 0 ? 0 : (nOrgWeight > 100 ? 100 : nOrgWeight);
+	FeatureVector result;
+	InitFeatureVector(&result);
+	FeatureVector4P* dst = Root(&result);
+	const FeatureVector4P* first = Root(pFV);
+	const FeatureVector4P* second = Root(aFV);
+	for (int i = 0; i < 5; i++)
+	{
+		dst[i].nLevels = first[i].nLevels;
+		for (int j = 0; j < 4; j++)
+		{
+			dst[i].Vector[j].x = (first[i].Vector[j].x * (100 - weight) + second[i].Vector[j].x * weight) / 100;
+			dst[i].Vector[j].y = (first[i].Vector[j].y * (100 - weight) + second[i].Vector[j].y * weight) / 100;
+		}
+	}
+	CopyFeatureData(pFV, &result);
+	return true;
 }
 
-// Stub: search image patch matching pFV within rcRange; returns best-match position (to be implemented in Plugin 3)
 DLL_EXP aPOINT CompareFromImage(FeatureVector* pFV, aBYTE* pImageBits, int nLineW, int nH,
-                                aRect rcSampleRC, aRect rcRange, int* nMinDist, FeatureVector* theMinFV)
+	aRect rcSampleRC, aRect rcRange, int* nMinDist, FeatureVector* theMinFV)
 {
-	aPOINT pt = {0, 0};
-	if (nMinDist) *nMinDist = 0x7fffffff;
-	return pt;
+	aPOINT result = {0, 0};
+	if (nMinDist) *nMinDist = INT_MAX;
+	if (!pFV || !pImageBits || !nMinDist || rcSampleRC.width < 4 || rcSampleRC.height < 4)
+		return result;
+	int minLeft = rcRange.left < 0 ? 0 : rcRange.left;
+	int minTop = rcRange.top < 0 ? 0 : rcRange.top;
+	int maxLeft = rcRange.left + rcRange.width - rcSampleRC.width;
+	int maxTop = rcRange.top + rcRange.height - rcSampleRC.height;
+	int imageMaxLeft = nLineW - rcSampleRC.width;
+	int imageMaxTop = nH - rcSampleRC.height;
+	if (maxLeft > imageMaxLeft) maxLeft = imageMaxLeft;
+	if (maxTop > imageMaxTop) maxTop = imageMaxTop;
+	if (!ValidRect(rcSampleRC, nLineW, nH) || maxLeft < minLeft || maxTop < minTop)
+		return result;
+	for (int y = minTop; y <= maxTop; y++)
+		for (int x = minLeft; x <= maxLeft; x++)
+		{
+			aRect candidate = {x, y, rcSampleRC.width, rcSampleRC.height};
+			FeatureVector current;
+			if (!ExtractFeatureFromImage(&current, pImageBits, nLineW, nH, candidate)) continue;
+			int distance = FV_Distance(pFV, &current, 0, 0);
+			if (distance < *nMinDist)
+			{
+				*nMinDist = distance;
+				result.x = x;
+				result.y = y;
+				if (theMinFV) CopyFeatureData(theMinFV, &current);
+			}
+		}
+	return result;
 }
 
-// Stub: compute distance between two feature vectors (to be implemented in Plugin 3)
 DLL_EXP int FV_Distance(FeatureVector* pFV, FeatureVector* aFV, int nFaceClrWeight, int nLevelWeight)
 {
-	return 0x7fffffff;
+	if (!pFV || !aFV) return INT_MAX;
+	const FeatureVector4P* first = Root(pFV);
+	const FeatureVector4P* second = Root(aFV);
+	long long distance = 0;
+	for (int i = 0; i < 4; i++)
+	{
+		distance += abs(first[0].Vector[i].x - second[0].Vector[i].x);
+		distance += abs(first[0].Vector[i].y - second[0].Vector[i].y);
+	}
+	return distance > INT_MAX ? INT_MAX : (int)distance;
 }
-
