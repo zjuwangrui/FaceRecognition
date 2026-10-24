@@ -270,7 +270,6 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 			tempImage[k] = 0;
 		}
 	}
-	ShowDebugMessage("FaceLocator: skin pixels=%d / %d", skinCount, tw * th);
 
 	// ---- Step 3: Morphological processing -----------------------------------
 	// 3x3 opening (erode then dilate): removes isolated noise points
@@ -280,19 +279,16 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	// into the face candidate at this already-downsampled resolution.
 	Dilate(tempImage, tw, th, 7);
 	Erode(tempImage, tw, th, 7);
-	ShowDebugMessage("FaceLocator: morphology done");
 
 	// ---- Step 4: Connected component labeling (4-connectivity) -------------
 	// RegionMark labels each connected region 1..N in tempImage and returns N.
 	// Pixel values become region labels (byte, so max 255 regions).
 	int nMaxMark = RegionMark(tempImage, tw, th);
-	ShowDebugMessage("FaceLocator: RegionMark -> %d regions", nMaxMark);
 
 	// ---- Step 5: Find and keep largest region (= face) ----------------------
 	if (nMaxMark <= 0)
 	{
 		// No skin region detected at all
-		ShowDebugMessage("FaceLocator: no skin region, face not found");
 		memset(&pBS->rcnFace, 0, sizeof(aRect));
 		pBS->nFacePixelNum = 0;
 		myHeapFree(tempImage);
@@ -319,7 +315,6 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 			faceLabel = l;
 		}
 	}
-	ShowDebugMessage("FaceLocator: face label=%d pixels=%d", faceLabel, maxCount);
 
 	// Keep only face region (set to 255), remove everything else (set to 0)
 	for (int k = 0; k < tw * th; k++)
@@ -412,16 +407,13 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	// A face is roughly as wide as it is tall (W:H ~ 1:1.5 at most).
 	// If the skin region is much taller than wide it is grabbing the neck;
 	// trim from the bottom to remove the neck portion.
-	ShowDebugMessage("FaceLocator: rcInTemp before trim=(%d,%d,%d,%d)",
-		rcInTemp.left, rcInTemp.top, rcInTemp.width, rcInTemp.height);
+
 	{
 		int maxH = rcInTemp.width * 6 / 5;
 		if (maxH < 1) maxH = 1;
 		if (rcInTemp.height > maxH)
 			rcInTemp.height = maxH;
 	}
-	ShowDebugMessage("FaceLocator: rcInTemp after trim=(%d,%d,%d,%d)",
-		rcInTemp.left, rcInTemp.top, rcInTemp.width, rcInTemp.height);
 
 	// ---- Step 7: Store results in pBS ---------------------------------------
 	// tempImage is tw x th (1/4W x 1/4H).
@@ -433,10 +425,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	pBS->rcnFace.width  = rcInTemp.width * 2;
 	pBS->rcnFace.height = rcInTemp.height;
 	pBS->nFacePixelNum  = nPixelCount * 2;
-	ShowDebugMessage("FaceLocator: rcnFace=(%d,%d,%d,%d) pixelNum=%d",
-		pBS->rcnFace.left, pBS->rcnFace.top,
-		pBS->rcnFace.width, pBS->rcnFace.height,
-		pBS->nFacePixelNum);
+
 
 	// ---- Step 8: Write face mask into Y channel of clrBmp_1d8 --------------
 	// Upscale tempImage (tw x th) horizontally x2 into clrBmp_1d8 Y channel (2*tw x th).

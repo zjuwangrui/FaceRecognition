@@ -868,6 +868,15 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 		ShowDebugMessage("BlinkEyeCheck: blink #%lu duration=%d frames",
 			state->blinkCount, blinkDuration);
 
+	if (bLastPlugin)
+	{
+		for (int i = 0; i < imageSize; i++)
+			morphologyTemp[i] = mask[i] ? 255 : 0;
+		CopyToRect(morphologyTemp, pYBits, tw, th, w, h, 0, 0, true);
+	}
+
+	// Draw tracking overlays after the optional debug mask, otherwise the
+	// mask display would overwrite the rectangles and center marks.
 	if (sHasEyeRects)
 	{
 		DrawRectangle(pYBits, w, h, sLeftEyeRect, RGB(255, 210, 0), true);
@@ -879,12 +888,6 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 			5, RGB(255, 255, 255), true);
 		DrawCross(pYBits, w, h, pBS->ptTheNose.x, pBS->ptTheNose.y,
 			5, RGB(180, 180, 180), true);
-	}
-	if (bLastPlugin)
-	{
-		for (int i = 0; i < imageSize; i++)
-			morphologyTemp[i] = mask[i] ? 255 : 0;
-		CopyToRect(morphologyTemp, pYBits, tw, th, w, h, 0, 0, true);
 	}
 
 	myHeapFree(morphologyTemp);

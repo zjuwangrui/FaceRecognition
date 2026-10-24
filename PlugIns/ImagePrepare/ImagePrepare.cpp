@@ -51,6 +51,18 @@ DLL_INP void InitFeatureVector(FeatureVector* pThis);
 char sInfo[] = "Plugin1-ImagePrepare: frame capture, copy, and downsample";
 bool bLastPlugin = false;
 
+// ---- Skin colour chroma window ----------------------
+// A pixel counts as skin when its chroma samples fall inside these closed
+// ranges: U_MIN <= U <= U_MAX and V_MIN <= V <= V_MAX.
+// byHistMap_U / byHistMap_V are only lookup tables for exactly these two tests,
+// so the ranges are defined once here instead of as literals in the loop.
+// NOTE: PlugIns/BlinkEyeCheck/BlinkEyeCheck.cpp repeats this same window as
+// literals inside ConfirmEyePigment(); keep the two in sync.
+#define U_MIN  85
+#define U_MAX  126
+#define V_MIN  130
+#define V_MAX  165
+
 // extern "C" _declspec(dllexport): export functions from this DLL in C linkage
 // bLastPlugin=true means this is the last active plugin in the chain
 DLL_EXP void ON_PLUGIN_BELAST(bool bLast)
@@ -113,9 +125,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 		if (sizeof(BUF_STRUCT) + sizeof(OTHER_VARS) + pixels * 47 / 16 > pixels * 4)
 			return;
 
-		// 1. Set image size
-		pBS->W = w;
-		pBS->H = h;
+	
 
 		// 2. Layout all buffer pointers inside pBuffer (manual formula 5.5).
 		//    Pointers must NOT be changed after initialization.
@@ -130,15 +140,19 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 		for (int i = 0; i < 8; i++)
 			pBS->pImageQueue[i] = pBS->lastImageQueue1d16m8 + i*(w*h/16);       // 8 individual frame pointers
 
-		// 3. Initialize scalar fields (manual section 5 step 2)
+		// 3. Initialize scalar fields 
+		pBS->W = w;
+		pBS->H = h;
 		pBS->cur_allocSize    = 0;
 		pBS->allocTimes       = 0;
 		pBS->cur_maxallocsize = 0;
 		pBS->bLastEyeChecked  = false;  // tracking model not yet established
-		pBS->EyeBallConfirm   = false;
-		pBS->EyePosConfirm    = false;
+		pBS->EyeBallConfirm   = true;
+		pBS->EyePosConfirm    = true;
 		pBS->nImageQueueIndex = -1;     // -1 means first frame not yet stored
 		pBS->nLastImageIndex  = -1;
+
+		// 4. Initialize tracking points
 		pBS->ptTheLeftEye.x = pBS->ptTheLeftEye.y = -1;
 		pBS->ptTheRightEye.x = pBS->ptTheRightEye.y = -1;
 		pBS->ptTheNose.x = pBS->ptTheNose.y = -1;
@@ -147,12 +161,12 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 		memset(pBS->pOtherVars->ClrLocBuf, 0, sizeof(pBS->pOtherVars->ClrLocBuf));
 		ResetFatigueState(GetFatigueState(pBS));
 
-		// 4. Skin color histogram maps (manual formula 5.6 / 5.7)
-		//    byHistMap_U[i]=1 if 85<=i<=126, byHistMap_V[i]=1 if 130<=i<=165
+		// 4. Skin color histogram maps
+		//    byHistMap_U[i]=1 if U_MIN<=i<=U_MAX, byHistMap_V[i]=1 if V_MIN<=i<=V_MAX
 		for (int i = 0; i < 256; i++)
 		{
-			pBS->pOtherVars->byHistMap_U[i] = (i >= 85  && i <= 126) ? 1 : 0;
-			pBS->pOtherVars->byHistMap_V[i] = (i >= 130 && i <= 165) ? 1 : 0;
+			pBS->pOtherVars->byHistMap_U[i] = (i >= U_MIN && i <= U_MAX) ? 1 : 0;
+			pBS->pOtherVars->byHistMap_V[i] = (i >= V_MIN && i <= V_MAX) ? 1 : 0;
 		}
 
 		// 5. Initialize nose, left eye, right eye tracking objects (manual table 5.3)
