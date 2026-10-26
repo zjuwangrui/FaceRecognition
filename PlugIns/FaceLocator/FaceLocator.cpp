@@ -144,6 +144,23 @@ static void Dilate(aBYTE* img, int w, int h, int N)
 	Maximum_2D(img, w, h, N);
 }
 
+static void ShowDebugStages(aBYTE* display, int displayW, int displayH,
+	const aBYTE* rawMask, const aBYTE* morphologyMask,
+	const aBYTE* finalMask, int maskW, int maskH)
+{
+	if (!display || !rawMask || !morphologyMask || !finalMask)
+		return;
+
+	// Left to right: raw skin mask, morphology result, final face mask after
+	// connected-component selection and shoulder/neck exclusion.
+	CopyToRect((aBYTE*)rawMask, display, maskW, maskH,
+		displayW, displayH, 0, 0, true);
+	CopyToRect((aBYTE*)morphologyMask, display, maskW, maskH,
+		displayW, displayH, maskW, 0, true);
+	CopyToRect((aBYTE*)finalMask, display, maskW, maskH,
+		displayW, displayH, maskW * 2, 0, true);
+}
+
 // Find the first sustained row expansion caused by shoulders or upper-body clothing.
 // The upper half of the connected region supplies a conservative face-width
 // reference. Three consecutive rows must be at least 1.5 times wider so that
@@ -236,11 +253,17 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	int tw = w / 4;  // tempImage width  = 1/4 W
 	int th = h / 4;  // tempImage height = 1/4 H
 
-	// Allocate temporary binary image from the dynamic heap
+	// Allocate temporary binary images from the dynamic heap. The two snapshots
+	// preserve intermediate stages for the last-plugin diagnostic display.
 	aBYTE* tempImage = myHeapAlloc(tw * th);
-	if (!tempImage)
+	aBYTE* rawMask = myHeapAlloc(tw * th);
+	aBYTE* morphologyMask = myHeapAlloc(tw * th);
+	if (!tempImage || !rawMask || !morphologyMask)
 	{
 		ShowDebugMessage("FaceLocator: myHeapAlloc failed, heap exhausted");
+		if (morphologyMask) myHeapFree(morphologyMask);
+		if (rawMask) myHeapFree(rawMask);
+		if (tempImage) myHeapFree(tempImage);
 		return;
 	}
 
@@ -270,6 +293,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 			tempImage[k] = 0;
 		}
 	}
+	memcpy(rawMask, tempImage, tw * th);
 
 	// ---- Step 3: Morphological processing -----------------------------------
 	// 3x3 opening (erode then dilate): removes isolated noise points
@@ -279,6 +303,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	// into the face candidate at this already-downsampled resolution.
 	Dilate(tempImage, tw, th, 7);
 	Erode(tempImage, tw, th, 7);
+	memcpy(morphologyMask, tempImage, tw * th);
 
 	// ---- Step 4: Connected component labeling (4-connectivity) -------------
 	// RegionMark labels each connected region 1..N in tempImage and returns N.
@@ -288,9 +313,16 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	// ---- Step 5: Find and keep largest region (= face) ----------------------
 	if (nMaxMark <= 0)
 	{
-		// No skin region detected at all
+		// No skin region detected at all. Keep the diagnostic stages visible so
+		// threshold or morphology failures can still be inspected.
 		memset(&pBS->rcnFace, 0, sizeof(aRect));
 		pBS->nFacePixelNum = 0;
+		memset(tempImage, 0, tw * th);
+		if (bLastPlugin)
+			ShowDebugStages(pYBits, w, h, rawMask, morphologyMask,
+				tempImage, tw, th);
+		myHeapFree(morphologyMask);
+		myHeapFree(rawMask);
 		myHeapFree(tempImage);
 		return;
 	}
@@ -331,6 +363,8 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 		ShowDebugMessage("FaceLocator: bounding rect not found or region too small");
 		memset(&pBS->rcnFace, 0, sizeof(aRect));
 		pBS->nFacePixelNum = 0;
+		myHeapFree(morphologyMask);
+		myHeapFree(rawMask);
 		myHeapFree(tempImage);
 		return;
 	}
@@ -395,6 +429,8 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 		{
 			memset(&pBS->rcnFace, 0, sizeof(aRect));
 			pBS->nFacePixelNum = 0;
+			myHeapFree(morphologyMask);
+			myHeapFree(rawMask);
 			myHeapFree(tempImage);
 			return;
 		}
@@ -409,10 +445,29 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	// trim from the bottom to remove the neck portion.
 
 	{
-		int maxH = rcInTemp.width * 6 / 5;
+		int maxH = rcInTemp.width * 23 / 20;
 		if (maxH < 1) maxH = 1;
 		if (rcInTemp.height > maxH)
-			rcInTemp.height = maxH;
+		{
+			int originalBottom = rcInTemp.top + rcInTemp.height;
+			int retainedBottom = rcInTemp.top + maxH;
+
+			// Keep the mask and the bounding rectangle consistent. The removed
+			// rows must not contribute to nFacePixelNum or later processing.
+			for (int y = retainedBottom; y < originalBottom; y++)
+				memset(tempImage + y * tw, 0, tw);
+
+			if (!GetEspGrayRect(tempImage, tw, th, 255,
+				&rcInTemp, &nPixelCount))
+			{
+				memset(&pBS->rcnFace, 0, sizeof(aRect));
+				pBS->nFacePixelNum = 0;
+				myHeapFree(morphologyMask);
+				myHeapFree(rawMask);
+				myHeapFree(tempImage);
+				return;
+			}
+		}
 	}
 
 	// ---- Step 7: Store results in pBS ---------------------------------------
@@ -449,17 +504,15 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	DrawRectangle(pYBits, w, h, rcDisplay, RGB(200, 200, 200), true); // white-ish box
 
 	// ---- Debug display (only when this is the last active plugin) -----------
-	// Show the binary face mask at the top-left corner of the screen.
+	// Left to right: raw threshold mask, morphology result, and the final mask
+	// after largest-region selection plus shoulder/neck exclusion.
 	if (bLastPlugin)
-	{
-		// Top-left: binary face mask (tempImage, tw x th)
-		CopyToRect(tempImage, pYBits, tw, th, w, h, 0, 0, true);
-		// Top-right: downsampled Y image from clrBmp_1d8 for comparison
-		// (clrBmp_1d8 Y channel was just overwritten with the mask, show grayBmp_1d16 instead)
-		CopyToRect(pBS->grayBmp_1d16, pYBits, tw, th, w, h, w - tw, 0, true);
-	}
+		ShowDebugStages(pYBits, w, h, rawMask, morphologyMask,
+			tempImage, tw, th);
 
 	// ---- Free temporary memory ----------------------------------------------
+	myHeapFree(morphologyMask);
+	myHeapFree(rawMask);
 	myHeapFree(tempImage);
 }
 
