@@ -4,6 +4,7 @@
 #include "ImagePrepare.h"
 #include "BufStruct.h"
 #include "ImageProc.h"
+#include "SkinColorThresholds.h"
 #include "FatigueState.h"
 #include "math.h"
 
@@ -58,10 +59,6 @@ bool bLastPlugin = false;
 // so the ranges are defined once here instead of as literals in the loop.
 // NOTE: PlugIns/BlinkEyeCheck/BlinkEyeCheck.cpp repeats this same window as
 // literals inside ConfirmEyePigment(); keep the two in sync.
-#define U_MIN  85
-#define U_MAX  126
-#define V_MIN  130
-#define V_MAX  165
 
 // extern "C" _declspec(dllexport): export functions from this DLL in C linkage
 // bLastPlugin=true means this is the last active plugin in the chain

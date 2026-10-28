@@ -402,16 +402,26 @@ void CVFWCAPTUREDlg::SampleYUVAtCapturePoint(int clientX, int clientY)
 	int y = clientY * m_nLatestYUVHeight / clientRect.bottom;
 	if (x < 0) x = 0;
 	if (y < 0) y = 0;
-	if (x >= m_nLatestYUVWidth) x = m_nLatestYUVWidth - 1;
-	if (y >= m_nLatestYUVHeight) y = m_nLatestYUVHeight - 1;
-	int yValue = m_pLatestY[y * m_nLatestYUVWidth + x];
-	int uvIndex = y * (m_nLatestYUVWidth / 2) + x / 2;
+	if (x >= m_nLatestYUVWidth)
+		x = m_nLatestYUVWidth - 1;
+	if (y >= m_nLatestYUVHeight)
+		y = m_nLatestYUVHeight - 1;
+
+	// FaceLocator uses ImagePrepare's nearest-neighbor downsampled sample:
+	// Y source coordinates are (2*sampleX, 4*sampleY). Its U/V resampling
+	// selects chroma source index (2*sampleX, 4*sampleY).
+	int sampleX = x / 2;
+	int sampleY = y / 4;
+	int actualX = sampleX * 2;
+	int actualY = sampleY * 4;
+	int yValue = m_pLatestY[actualY * m_nLatestYUVWidth + actualX];
+	int uvIndex = actualY * (m_nLatestYUVWidth / 2) + sampleX * 2;
 	int uValue = m_pLatestU[uvIndex];
 	int vValue = m_pLatestV[uvIndex];
 	LeaveCriticalSection(&m_latestYUVLock);
 
 	text.Format("(%d,%d) YUV=(%d, %d, %d)",
-		x, y, yValue, uValue, vValue);
+		actualX, actualY, yValue, uValue, vValue);
 	SetDlgItemText(IDC_YUV_VALUE, text);
 }
 

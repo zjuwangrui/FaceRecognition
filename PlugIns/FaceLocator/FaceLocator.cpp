@@ -16,6 +16,7 @@
 #include "FaceLocator.h"
 #include "BufStruct.h"
 #include "ImageProc.h"
+#include "SkinColorThresholds.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -245,9 +246,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	// ---- Step 1: Illumination compensation ---------------------------------
 	// Equalize only the Y plane. U/V remain unchanged because the skin model
 	// below uses fixed chrominance ranges.
-	int yWidth = w / 2;
-	int yHeight = h / 4;
-	EqualizeLuminance(pBS->clrBmp_1d8, yWidth, yHeight);
+	// EqualizeLuminance(pBS->clrBmp_1d8, yWidth, yHeight);
 
 	// Dimensions of the working binary image (same as U/V plane of clrBmp_1d8)
 	int tw = w / 4;  // tempImage width  = 1/4 W
@@ -277,12 +276,20 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	aBYTE* pU_1d8 = pBS->clrBmp_1d8 + (w / 2) * (h / 4);
 	aBYTE* pV_1d8 = pBS->clrBmp_1d8 + (w / 2) * (h / 4) + tw * th;
 
-	// Condition: U in [85,126] AND V in [130,165] -> skin pixel (formula 5.9)
-	// byHistMap_U/V are lookup tables set to 1 inside the range, 0 outside
+	// Condition: U in [U_MIN,U_MAX], V in [V_MIN,V_MAX], and Y < Y_MAX
+	// -> skin pixel (formula 5.9 plus luminance constraint).
+	// Each U/V sample corresponds to one nearest-neighbor Y sample after
+	// ImagePrepare downsamples the frame: source x = 2 * sample x,
+	// source y = 4 * sample y.
+	aBYTE* pY_1d8 = pBS->clrBmp_1d8;
 	int skinCount = 0;
 	for (int k = 0; k < tw * th; k++)
 	{
-		if (pBS->pOtherVars->byHistMap_U[pU_1d8[k]] &&
+		int sampleX = k % tw;
+		int sampleY = k / tw;
+		int yValue = pY_1d8[sampleY * (w / 2) + sampleX * 2];
+		if (yValue < Y_MAX &&
+		    pBS->pOtherVars->byHistMap_U[pU_1d8[k]] &&
 		    pBS->pOtherVars->byHistMap_V[pV_1d8[k]])
 		{
 			tempImage[k] = 255;
