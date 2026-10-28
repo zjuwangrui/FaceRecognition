@@ -23,6 +23,7 @@
 #define IDC_VIDEOH                      1012
 #define IDC_LIST1                       1013
 #define IDC_LIST2                       1014
+#define IDC_YUV_VALUE                   1015
 
 // Next default values for new objects
 // 

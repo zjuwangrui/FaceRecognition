@@ -99,6 +99,7 @@ class CVFWCAPTUREDlg : public CDialog
 // Construction
 public:
 	CVFWCAPTUREDlg(CWnd* pParent = NULL);	// standard constructor
+	virtual ~CVFWCAPTUREDlg();
     void AddLogInfo(LPCTSTR sMessage, ...);
 // Dialog Data
 	//{{AFX_DATA(CVFWCAPTUREDlg)
@@ -124,12 +125,29 @@ public:
 // Implementation
 protected:
 	static LRESULT CALLBACK VideoCallbackProc(HWND hWnd, LPVOID lpVHdr);
+	static LRESULT CALLBACK CaptureWindowProc(HWND hWnd, UINT message,
+		WPARAM wParam, LPARAM lParam);
+	void InstallCaptureSubclass();
+	void RemoveCaptureSubclass();
+	void UpdateLatestYUV(const BYTE* pY, const BYTE* pU, const BYTE* pV,
+		int w, int h);
+	void ClearLatestYUV();
+	void SampleYUVAtCapturePoint(int clientX, int clientY);
+	BOOL IsFaceLocatorLastPlugin() const;
 	void CombineYUVData(int w,int h,BYTE *pYUV, BYTE *pY, BYTE *pU, BYTE *pV);
 	void SplitYUVData(int w,int h,BYTE* pYUV,BYTE* pY,BYTE* pU,BYTE* pV);
     void YUVtoRGB(int w,int h,BYTE* pYUV,BYTE* pY,BYTE* pU,BYTE* pV);
     void RGBtoYUV(int w,int h,BYTE* pYUV,BYTE* pY,BYTE* pU,BYTE* pV);
 	HICON m_hIcon;
     HWND  m_hCapture;
+	WNDPROC m_pOldCaptureProc;
+	BYTE* m_pLatestY;
+	BYTE* m_pLatestU;
+	BYTE* m_pLatestV;
+	int m_nLatestYUVWidth;
+	int m_nLatestYUVHeight;
+	BOOL m_bLatestYUVValid;
+	CRITICAL_SECTION m_latestYUVLock;
 	ThePlugIns AllPlugIns[32];
     int nPlugInNum;
     BYTE* pBuffer;//process imge

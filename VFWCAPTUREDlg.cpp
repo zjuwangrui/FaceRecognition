@@ -92,7 +92,24 @@ CVFWCAPTUREDlg::CVFWCAPTUREDlg(CWnd* pParent /*=NULL*/)
 	m_sVideoFmt = _T("");
     pBuffer = NULL;
 	m_bDSPFormatSim = FALSE;
+	m_hCapture = NULL;
+	m_pOldCaptureProc = NULL;
+	m_pLatestY = NULL;
+	m_pLatestU = NULL;
+	m_pLatestV = NULL;
+	m_nLatestYUVWidth = 0;
+	m_nLatestYUVHeight = 0;
+	m_bLatestYUVValid = FALSE;
+	InitializeCriticalSection(&m_latestYUVLock);
 	theDlg = this;
+}
+
+CVFWCAPTUREDlg::~CVFWCAPTUREDlg()
+{
+	ClearLatestYUV();
+	DeleteCriticalSection(&m_latestYUVLock);
+	if (theDlg == this)
+		theDlg = NULL;
 }
 
 void CVFWCAPTUREDlg::DoDataExchange(CDataExchange* pDX)
@@ -247,7 +264,158 @@ HCURSOR CVFWCAPTUREDlg::OnQueryDragIcon()
 {
 	return (HCURSOR) m_hIcon;
 }
-void CVFWCAPTUREDlg::OnStart() 
+
+static const char* CAPTURE_OWNER_PROPERTY = "VFWCAPTURE_DLG_OWNER";
+
+void CVFWCAPTUREDlg::InstallCaptureSubclass()
+{
+	if (!m_hCapture || m_pOldCaptureProc)
+		return;
+
+	SetProp(m_hCapture, CAPTURE_OWNER_PROPERTY, (HANDLE)this);
+#ifdef _WIN64
+	m_pOldCaptureProc = (WNDPROC)SetWindowLongPtr(m_hCapture, GWLP_WNDPROC,
+		(LONG_PTR)CaptureWindowProc);
+#else
+	m_pOldCaptureProc = (WNDPROC)SetWindowLong(m_hCapture, GWL_WNDPROC,
+		(LONG)CaptureWindowProc);
+#endif
+	if (!m_pOldCaptureProc)
+		RemoveProp(m_hCapture, CAPTURE_OWNER_PROPERTY);
+}
+
+void CVFWCAPTUREDlg::RemoveCaptureSubclass()
+{
+	if (!m_hCapture)
+	{
+		m_pOldCaptureProc = NULL;
+		return;
+	}
+
+	if (m_pOldCaptureProc)
+	{
+#ifdef _WIN64
+		SetWindowLongPtr(m_hCapture, GWLP_WNDPROC, (LONG_PTR)m_pOldCaptureProc);
+#else
+		SetWindowLong(m_hCapture, GWL_WNDPROC, (LONG)m_pOldCaptureProc);
+#endif
+		m_pOldCaptureProc = NULL;
+	}
+	RemoveProp(m_hCapture, CAPTURE_OWNER_PROPERTY);
+}
+
+LRESULT CALLBACK CVFWCAPTUREDlg::CaptureWindowProc(HWND hWnd, UINT message,
+	WPARAM wParam, LPARAM lParam)
+{
+	CVFWCAPTUREDlg* dlg = (CVFWCAPTUREDlg*)GetProp(hWnd,
+		CAPTURE_OWNER_PROPERTY);
+	WNDPROC oldProc = dlg ? dlg->m_pOldCaptureProc : NULL;
+
+	if (dlg && message == WM_LBUTTONDOWN)
+		dlg->SampleYUVAtCapturePoint((short)LOWORD(lParam),
+			(short)HIWORD(lParam));
+
+	return oldProc ? CallWindowProc(oldProc, hWnd, message, wParam, lParam) :
+		::DefWindowProc(hWnd, message, wParam, lParam);
+}
+
+void CVFWCAPTUREDlg::ClearLatestYUV()
+{
+	EnterCriticalSection(&m_latestYUVLock);
+	delete [] m_pLatestY;
+	delete [] m_pLatestU;
+	delete [] m_pLatestV;
+	m_pLatestY = NULL;
+	m_pLatestU = NULL;
+	m_pLatestV = NULL;
+	m_nLatestYUVWidth = 0;
+	m_nLatestYUVHeight = 0;
+	m_bLatestYUVValid = FALSE;
+	LeaveCriticalSection(&m_latestYUVLock);
+}
+
+void CVFWCAPTUREDlg::UpdateLatestYUV(const BYTE* pY, const BYTE* pU,
+	const BYTE* pV, int w, int h)
+{
+	if (!pY || !pU || !pV || w <= 0 || h <= 0 || (w & 1))
+		return;
+
+	int ySize = w * h;
+	int uvSize = ySize / 2;
+	EnterCriticalSection(&m_latestYUVLock);
+	if (m_nLatestYUVWidth != w || m_nLatestYUVHeight != h ||
+		!m_pLatestY || !m_pLatestU || !m_pLatestV)
+	{
+		delete [] m_pLatestY;
+		delete [] m_pLatestU;
+		delete [] m_pLatestV;
+		m_pLatestY = new BYTE[ySize];
+		m_pLatestU = new BYTE[uvSize];
+		m_pLatestV = new BYTE[uvSize];
+		m_nLatestYUVWidth = w;
+		m_nLatestYUVHeight = h;
+	}
+	memcpy(m_pLatestY, pY, ySize);
+	memcpy(m_pLatestU, pU, uvSize);
+	memcpy(m_pLatestV, pV, uvSize);
+	m_bLatestYUVValid = TRUE;
+	LeaveCriticalSection(&m_latestYUVLock);
+}
+
+BOOL CVFWCAPTUREDlg::IsFaceLocatorLastPlugin() const
+{
+	int last = -1;
+	for (int i = 0; i < nPlugInNum; i++)
+	{
+		if (AllPlugIns[i].bPlugInOk && AllPlugIns[i].bEnabled &&
+			_stricmp(AllPlugIns[i].sName, "PZ_FinalProc.dll") != 0)
+			last = i;
+	}
+	return last >= 0 &&
+		_stricmp(AllPlugIns[last].sName, "PB_FaceLocator.dll") == 0;
+}
+
+void CVFWCAPTUREDlg::SampleYUVAtCapturePoint(int clientX, int clientY)
+{
+	if (!IsFaceLocatorLastPlugin())
+	{
+		SetDlgItemText(IDC_YUV_VALUE,
+			"YUV: enable FaceLocator as the last image plugin");
+		return;
+	}
+
+	RECT clientRect;
+	if (!m_hCapture || !::GetClientRect(m_hCapture, &clientRect) ||
+		clientRect.right <= 0 || clientRect.bottom <= 0)
+		return;
+
+	CString text;
+	EnterCriticalSection(&m_latestYUVLock);
+	if (!m_bLatestYUVValid || !m_pLatestY || !m_pLatestU || !m_pLatestV)
+	{
+		LeaveCriticalSection(&m_latestYUVLock);
+		SetDlgItemText(IDC_YUV_VALUE, "YUV: waiting for a video frame");
+		return;
+	}
+
+	int x = clientX * m_nLatestYUVWidth / clientRect.right;
+	int y = clientY * m_nLatestYUVHeight / clientRect.bottom;
+	if (x < 0) x = 0;
+	if (y < 0) y = 0;
+	if (x >= m_nLatestYUVWidth) x = m_nLatestYUVWidth - 1;
+	if (y >= m_nLatestYUVHeight) y = m_nLatestYUVHeight - 1;
+	int yValue = m_pLatestY[y * m_nLatestYUVWidth + x];
+	int uvIndex = y * (m_nLatestYUVWidth / 2) + x / 2;
+	int uValue = m_pLatestU[uvIndex];
+	int vValue = m_pLatestV[uvIndex];
+	LeaveCriticalSection(&m_latestYUVLock);
+
+	text.Format("(%d,%d) YUV=(%d, %d, %d)",
+		x, y, yValue, uValue, vValue);
+	SetDlgItemText(IDC_YUV_VALUE, text);
+}
+
+void CVFWCAPTUREDlg::OnStart()
 {
 	// TODO: Add your control notification handler code here
 	//	if( GetDlgItem(IDC_GRABFRAME)->IsWindowEnabled() )
@@ -260,10 +428,18 @@ void CVFWCAPTUREDlg::OnStart()
 		CAPTUREPARMS m_CaptureParams;
     //  ����"����" 
 		m_hCapture = capCreateCaptureWindow("cap",WS_EX_CONTROLPARENT|WS_CHILD|WS_VISIBLE,10,6,640,480,m_hWnd,0);
+		InstallCaptureSubclass();
 	//  connect driver, retry up to 3 times to avoid infinite loop
 		int nRetry = 0;
 		while(!capDriverConnect(m_hCapture, 0) && nRetry < 3) nRetry++;
-		if(nRetry >= 3) { AddLogInfo("Camera connect failed!"); return; }
+		if(nRetry >= 3)
+		{
+			AddLogInfo("Camera connect failed!");
+			RemoveCaptureSubclass();
+			::DestroyWindow(m_hCapture);
+			m_hCapture = NULL;
+			return;
+		}
 
     //  setup capture params
 		capCaptureGetSetup(m_hCapture,&m_CaptureParams,sizeof(m_CaptureParams));
@@ -342,18 +518,24 @@ LRESULT CALLBACK CVFWCAPTUREDlg::VideoCallbackProc(HWND hWnd, LPVOID lpVHdr)
 	     if( !pImgProcBuf ) 
 						{
 						pImgProcBuf = new BYTE[nVideoW*nVideoH*4];
-						if( !pImgProcBuf )	return (LRESULT)FALSE;
+						if( !pImgProcBuf )
+						{
+							delete [] pY;
+							return (LRESULT)FALSE;
+						}
 						((BUF_STRUCT*)pImgProcBuf)->bNotInited = true;//���ó�ʼ�����
 						}
 			//ת����YUV2ƽ���ʽ
-			if	 (dwFormat== YUV2)
-			theDlg->SplitYUVData(nVideoW,nVideoH,pVHdr->lpData,pY,pU,pV);
-            if	 (dwFormat== RGB24)
-            theDlg->RGBtoYUV(nVideoW,nVideoH,pVHdr->lpData,pY,pU,pV);
+			if (dwFormat == YUV2)
+				theDlg->SplitYUVData(nVideoW,nVideoH,pVHdr->lpData,pY,pU,pV);
+			if (dwFormat == RGB24)
+				theDlg->RGBtoYUV(nVideoW,nVideoH,pVHdr->lpData,pY,pU,pV);
+			theDlg->UpdateLatestYUV(pY, pU, pV, nVideoW, nVideoH);
 		}
 		else
         {
 		theDlg->AddLogInfo("δ֪����Ƶ��ʽ---%d,frame_size=%d,video_size=%d",dwFormat,pVHdr->dwBufferLength,nVideoW*nVideoH);
+					delete [] pY;
 					return FALSE;
 		}
  //
@@ -384,7 +566,7 @@ LRESULT CALLBACK CVFWCAPTUREDlg::VideoCallbackProc(HWND hWnd, LPVOID lpVHdr)
 			
 	
 	}	
-	delete pY;
+	delete [] pY;
     return (LRESULT) TRUE ;
 }
 
@@ -469,13 +651,20 @@ void CVFWCAPTUREDlg::OnActiveall()
 //
 BOOL CVFWCAPTUREDlg::DestroyWindow()
 {	// TODO: Add your specialized code here and/or call the base class
+	KillTimer(1);
+	RemoveCaptureSubclass();
+	if (m_hCapture)
+	{
+		capSetCallbackOnFrame(m_hCapture, NULL);
+		capDriverDisconnect(m_hCapture);
+		m_hCapture = NULL;
+	}
+	ClearLatestYUV();
 	for (int i = 0; i < nPlugInNum; i++)
 	{
 		if (AllPlugIns[i].bPlugInOk && AllPlugIns[i].OnPlugInExit)
 			AllPlugIns[i].OnPlugInExit();
 	}
-	if (m_hCapture)
-		capDriverDisconnect(m_hCapture);
 	return CDialog::DestroyWindow();
 }
 //��YUV422��Ƶ���ݸ�ʽ��������YUYVYUYV...��ת��ΪYUV422ƽ��ͼƬ��ʽ(��Y-U-V���)
