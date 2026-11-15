@@ -518,7 +518,6 @@ DLL_EXP bool GetEspGrayRect(aBYTE* ThisImage, int W, int H, aBYTE gray, aRect* p
 DLL_EXP bool ReSample(aBYTE* ThisImage,int Width,int Height,
 					  int newWidth,int newHeight,
 					  bool InsMode,
-					  bool bGray,
 					  aBYTE *result
 					  )
 {
@@ -555,11 +554,6 @@ DLL_EXP bool ReSample(aBYTE* ThisImage,int Width,int Height,
             lpLineDes = lpDes+j*newWidth;
             for(i=0;i<newWidth;i++) lpLineDes[i] = lpLineSrc[HSampleTable[i]];
         }
-		if( bGray )
-		{ myHeapFree((aBYTE*)VSampleTable);
-	      myHeapFree((aBYTE*)HSampleTable);
-		  return true;
-		}
 		//U channel
         lpDes += newWidth*newHeight;
         lpSrc += Width*Height;
@@ -580,9 +574,9 @@ DLL_EXP bool ReSample(aBYTE* ThisImage,int Width,int Height,
         myHeapFree((aBYTE*)HSampleTable);
     }
     else
-	{   // bilinear interpolation
-        if( bGray )	GrayLinearIns(ThisImage,Width,Height,newWidth,newHeight,result);
-		else		ColorLinearIns(ThisImage,Width,Height,newWidth,newHeight,result);
+	{   
+		ColorLinearIns(ThisImage,Width,Height,newWidth,newHeight,result);
     }
     return true;
 }
+    

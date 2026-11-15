@@ -6,7 +6,6 @@
 #include "ImageProc.h"
 #include "SkinColorThresholds.h"
 #include "FatigueState.h"
-#include "math.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -203,14 +202,14 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 
 	// Downsample to clrBmp_1d8 (1/2W x 1/4H, YUV422 planar)
 	// Y: (w, h) -> (w/2, h/4)
-	ReSample(pBS->colorBmp,            w,   h, w/2, h/4, false, true, pBS->clrBmp_1d8);
+	ReSample(pBS->colorBmp,            w,   h, w/2, h/4, false, pBS->clrBmp_1d8);
 	// U: (w/2, h) -> (w/4, h/4)
-	ReSample(pBS->colorBmp + w*h,      w/2, h, w/4, h/4, false, true, pBS->clrBmp_1d8 + (w/2)*(h/4));
+	ReSample(pBS->colorBmp + w*h,      w/2, h, w/4, h/4, false, pBS->clrBmp_1d8 + (w/2)*(h/4));
 	// V: (w/2, h) -> (w/4, h/4)
-	ReSample(pBS->colorBmp + w*h*3/2,  w/2, h, w/4, h/4, false, true, pBS->clrBmp_1d8 + (w/2)*(h/4) + (w/4)*(h/4));
+	ReSample(pBS->colorBmp + w*h*3/2,  w/2, h, w/4, h/4, false, pBS->clrBmp_1d8 + (w/2)*(h/4) + (w/4)*(h/4));
 
 	// Downsample to grayBmp_1d16 (1/4W x 1/4H, grayscale Y channel only)
-	ReSample(pBS->grayBmp, w, h, w/4, h/4, false, true, pBS->grayBmp_1d16);
+	ReSample(pBS->grayBmp, w, h, w/4, h/4, false,  pBS->grayBmp_1d16);
 
 	// Debug display: copy downsampled results back into pYBits so they appear on screen.
 	// Only runs when ImagePrepare is the last active plugin (others disabled).

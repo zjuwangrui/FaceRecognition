@@ -199,6 +199,9 @@ static int FindShoulderCutoff(aBYTE* image, int w, int h, const aRect& rect)
 			faceWidth = right - left + 1;
 	}
 
+	ShowDebugMessage("FaceLocator: faceWidth=%d temp pixels (%d source pixels)",
+		faceWidth, faceWidth * 4);
+
 	if (faceWidth < 4)
 		return bottom;
 
@@ -308,8 +311,8 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	Dilate(tempImage, tw, th, 3);
 	// Use a small 3x3 closing so nearby background regions are not bridged
 	// into the face candidate at this already-downsampled resolution.
-	Dilate(tempImage, tw, th, 7);
-	Erode(tempImage, tw, th, 7);
+	Dilate(tempImage, tw, th, 10);
+	Erode(tempImage, tw, th, 10);
 	memcpy(morphologyMask, tempImage, tw * th);
 
 	// ---- Step 4: Connected component labeling (4-connectivity) -------------
@@ -403,7 +406,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 			// Smooth the normalized cutoff so changes in candidate height do not
 			// move the cutoff abruptly between adjacent frames.
 			nShoulderCutoffRatio =
-				(nShoulderCutoffRatio * 3 + detectedRatio) / 4;
+				(nShoulderCutoffRatio * 85 + detectedRatio) / 100;  //EMA smoothing, 0.75, 0.85
 		}
 	}
 	else
@@ -452,7 +455,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	// trim from the bottom to remove the neck portion.
 
 	{
-		int maxH = rcInTemp.width * 23 / 20;
+		int maxH = rcInTemp.width * 115 / 100;//1.17
 		if (maxH < 1) maxH = 1;
 		if (rcInTemp.height > maxH)
 		{
@@ -493,7 +496,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	// Upscale tempImage (tw x th) horizontally x2 into clrBmp_1d8 Y channel (2*tw x th).
 	// This overwrites the Y channel, which is intentional and allowed.
 	// U and V channels are untouched.
-	ReSample(tempImage, tw, th, w / 2, h / 4, false, true, pBS->clrBmp_1d8);
+	ReSample(tempImage, tw, th, w / 2, h / 4, false, pBS->clrBmp_1d8);
 
 	// ---- Step 9: Draw face bounding box on full-resolution display ----------
 	// rcnFace is in clrBmp_1d8 space (w/2 x h/4).
