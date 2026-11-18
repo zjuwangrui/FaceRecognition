@@ -44,21 +44,6 @@ CFaceLocatorApp theApp;
 char sInfo[] = "Plugin2-FaceLocator: skin color face detection";
 bool bLastPlugin = false;
 
-// Shoulder-cutoff temporal state. Detection must persist for several frames
-// before it is accepted, and brief misses retain the last reliable cutoff.
-static bool bShoulderCutoffActive = false;
-static int nShoulderHitFrames = 0;
-static int nShoulderMissFrames = 0;
-static int nShoulderCutoffRatio = 0;
-
-static void ResetShoulderCutoffState()
-{
-	bShoulderCutoffActive = false;
-	nShoulderHitFrames = 0;
-	nShoulderMissFrames = 0;
-	nShoulderCutoffRatio = 0;
-}
-
 DLL_EXP void ON_PLUGIN_BELAST(bool bLast)
 {
 	AFX_MANAGE_STATE(AfxGetStaticModuleState());
@@ -74,7 +59,6 @@ DLL_EXP LPCTSTR ON_PLUGININFO(void)
 DLL_EXP void ON_INITPLUGIN(LPVOID lpParameter)
 {
 	AFX_MANAGE_STATE(AfxGetStaticModuleState());
-	ResetShoulderCutoffState();
 }
 
 DLL_EXP int ON_PLUGINCTRL(int nMode, void* pParameter)
@@ -162,27 +146,29 @@ static void ShowDebugStages(aBYTE* display, int displayW, int displayH,
 		displayW, displayH, maskW * 2, 0, true);
 }
 
-// Find the first sustained row expansion caused by shoulders or upper-body clothing.
-// The upper half of the connected region supplies a conservative face-width
-// reference. Three consecutive rows must be at least 1.5 times wider so that
-// an isolated noisy row does not cut the face.
-static int FindShoulderCutoff(aBYTE* image, int w, int h, const aRect& rect)
+// Limit the mask below the widest upper-face row to a vertical face channel.
+// The channel keeps a 10 percent face-width margin on both sides, so a shoulder
+// connected on only one side cannot widen the final face rectangle.
+static bool TrimOutsideFaceChannel(aBYTE* image, int w, int h,
+	const aRect& rect)
 {
 	int top = rect.top;
 	int bottom = rect.top + rect.height;
 	int sampleEnd;
 	int faceWidth = 0;
-	int consecutiveWideRows = 0;
+	int faceLeft = 0;
+	int faceRight = 0;
+	int referenceY = 0;
 
-	if (!image || rect.height < 12 || rect.width < 4)
-		return bottom;
+	if (!image || rect.height < 1 || rect.width < 1)
+		return false;
 
 	if (top < 0) top = 0;
 	if (bottom > h) bottom = h;
 	sampleEnd = top + (bottom - top) / 2;
+	if (sampleEnd <= top)
+		return false;
 
-	// Use the widest row in the upper half as the normal face width. This avoids
-	// treating the gradual widening from forehead to cheeks as a shoulder.
 	for (int y = top; y < sampleEnd; y++)
 	{
 		int left = w;
@@ -195,45 +181,46 @@ static int FindShoulderCutoff(aBYTE* image, int w, int h, const aRect& rect)
 				right = x;
 			}
 		}
+
 		if (right >= left && right - left + 1 > faceWidth)
+		{
 			faceWidth = right - left + 1;
+			faceLeft = left;
+			faceRight = right;
+			referenceY = y;
+		}
 	}
 
-	ShowDebugMessage("FaceLocator: faceWidth=%d temp pixels (%d source pixels)",
-		faceWidth, faceWidth * 4);
+	if (faceWidth < 1)
+		return false;
 
-	if (faceWidth < 4)
-		return bottom;
+	int margin = faceWidth * 10 / 100;
+	if (margin < 1) margin = 1;
+	int allowedLeft = faceLeft - margin;
+	int allowedRight = faceRight + margin;
+	if (allowedLeft < 0) allowedLeft = 0;
+	if (allowedRight >= w) allowedRight = w - 1;
 
-	for (int y = sampleEnd; y < bottom; y++)
+	for (int y = referenceY + 1; y < bottom; y++)
 	{
-		int left = w;
-		int right = -1;
-		int rowWidth = 0;
-		for (int x = 0; x < w; x++)
+		for (int x = rect.left; x < allowedLeft; x++)
 		{
-			if (image[y * w + x] == 255)
-			{
-				if (x < left) left = x;
-				right = x;
-			}
+			if (x >= 0 && x < w)
+				image[y * w + x] = 0;
 		}
-		if (right >= left)
-			rowWidth = right - left + 1;
-
-		if (rowWidth >= faceWidth * 3 / 2 && rowWidth >= faceWidth + 4)
+		for (int x = allowedRight + 1;
+			x < rect.left + rect.width && x < w; x++)
 		{
-			consecutiveWideRows++;
-			if (consecutiveWideRows >= 3)
-				return y - consecutiveWideRows + 1;
-		}
-		else
-		{
-			consecutiveWideRows = 0;
+			if (x >= 0)
+				image[y * w + x] = 0;
 		}
 	}
 
-	return bottom;
+	ShowDebugMessage(
+		"FaceLocator: face channel y=%d width=%d left=%d right=%d allowed=(%d,%d)",
+		referenceY, faceWidth, faceLeft, faceRight,
+		allowedLeft, allowedRight);
+	return true;
 }
 
 DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits, BYTE* pBuffer)
@@ -311,8 +298,8 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	Dilate(tempImage, tw, th, 3);
 	// Use a small 3x3 closing so nearby background regions are not bridged
 	// into the face candidate at this already-downsampled resolution.
-	Dilate(tempImage, tw, th, 10);
-	Erode(tempImage, tw, th, 10);
+	Dilate(tempImage, tw, th, 7);
+	Erode(tempImage, tw, th, 7);
 	memcpy(morphologyMask, tempImage, tw * th);
 
 	// ---- Step 4: Connected component labeling (4-connectivity) -------------
@@ -380,62 +367,13 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	}
 
 	// ---- Shoulder exclusion -------------------------------------------------
-	// Clothing may satisfy the skin-color threshold and remain connected to the
-	// neck. Detect a sustained width expansion in the lower half, discard rows
-	// from that point down, then recompute the rectangle from the retained mask.
-	int detectedCutoff = FindShoulderCutoff(tempImage, tw, th, rcInTemp);
-	int originalBottom = rcInTemp.top + rcInTemp.height;
-	int shoulderCutoff = originalBottom;
-
-	if (detectedCutoff < originalBottom)
+	// Keep rows below the widest upper-face row inside the face channel. This
+	// removes a shoulder connected on only one side without requiring a 1.5x
+	// full-row width increase.
+	if (TrimOutsideFaceChannel(tempImage, tw, th, rcInTemp))
 	{
-		int detectedRatio = (detectedCutoff - rcInTemp.top) * 1000 / rcInTemp.height;
-		nShoulderHitFrames++;
-		nShoulderMissFrames = 0;
-
-		if (!bShoulderCutoffActive)
-		{
-			if (nShoulderHitFrames >= 3)
-			{
-				bShoulderCutoffActive = true;
-				nShoulderCutoffRatio = detectedRatio;
-			}
-		}
-		else
-		{
-			// Smooth the normalized cutoff so changes in candidate height do not
-			// move the cutoff abruptly between adjacent frames.
-			nShoulderCutoffRatio =
-				(nShoulderCutoffRatio * 85 + detectedRatio) / 100;  //EMA smoothing, 0.75, 0.85
-		}
-	}
-	else
-	{
-		nShoulderHitFrames = 0;
-		if (bShoulderCutoffActive)
-		{
-			nShoulderMissFrames++;
-			if (nShoulderMissFrames >= 5)
-				ResetShoulderCutoffState();
-		}
-	}
-
-	if (bShoulderCutoffActive)
-	{
-		shoulderCutoff = rcInTemp.top +
-			rcInTemp.height * nShoulderCutoffRatio / 1000;
-		if (shoulderCutoff <= rcInTemp.top)
-			shoulderCutoff = rcInTemp.top + 1;
-		if (shoulderCutoff > originalBottom)
-			shoulderCutoff = originalBottom;
-	}
-
-	if (shoulderCutoff < originalBottom)
-	{
-		for (int y = shoulderCutoff; y < originalBottom; y++)
-			memset(tempImage + y * tw, 0, tw);
-
-		if (!GetEspGrayRect(tempImage, tw, th, 255, &rcInTemp, &nPixelCount))
+		if (!GetEspGrayRect(tempImage, tw, th, 255,
+			&rcInTemp, &nPixelCount))
 		{
 			memset(&pBS->rcnFace, 0, sizeof(aRect));
 			pBS->nFacePixelNum = 0;
@@ -444,9 +382,6 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 			myHeapFree(tempImage);
 			return;
 		}
-		ShowDebugMessage("FaceLocator: shoulder cutoff=%d rect=(%d,%d,%d,%d)",
-			shoulderCutoff, rcInTemp.left, rcInTemp.top,
-			rcInTemp.width, rcInTemp.height);
 	}
 
 	// ---- Neck exclusion: trim bounding rect bottom to face aspect ratio ----
@@ -455,7 +390,7 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 	// trim from the bottom to remove the neck portion.
 
 	{
-		int maxH = rcInTemp.width * 115 / 100;//1.17
+		int maxH = rcInTemp.width * 115 / 100; // 1.15
 		if (maxH < 1) maxH = 1;
 		if (rcInTemp.height > maxH)
 		{
@@ -529,5 +464,4 @@ DLL_EXP void ON_PLUGINRUN(int w, int h, BYTE* pYBits, BYTE* pUBits, BYTE* pVBits
 DLL_EXP void ON_PLUGINEXIT()
 {
 	AFX_MANAGE_STATE(AfxGetStaticModuleState());
-	ResetShoulderCutoffState();
 }
